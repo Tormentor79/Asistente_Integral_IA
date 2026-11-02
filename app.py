@@ -6,6 +6,7 @@ from groq import Groq
 
 app = Flask(__name__)
 
+# URL de tu servicio eSpeak en Render
 ESPEAK_SERVICE_URL = os.environ.get(
     "ESPEAK_SERVICE_URL", "https://tu-espeak-server.onrender.com/tts"
 )
@@ -72,19 +73,18 @@ def procesar_voz():
         messages=[
             {
                 "role": "system",
-                (
-                    "content": "Eres un asistente de voz inteligente. Puedes"
-                    " explayarte de forma natural y detallada (aproximadamente"
-                    " unas 4 o 5 oraciones). NO utilices emojis bajo ningún"
-                    " concepto. Puedes usar formato markdown y saltos de"
-                    " línea si lo consideras útil para estructurar tu"
-                    " respuesta."
+                "content": (
+                    "Eres un asistente de voz inteligente. Puedes explayarte"
+                    " de forma natural y detallada (aproximadamente unas 4 o"
+                    " 5 oraciones). NO utilices emojis bajo ningún concepto."
+                    " Puedes usar formato markdown y saltos de línea si lo"
+                    " consideras útil para estructurar tu respuesta."
                 ),
             },
             {"role": "user", "content": stt_text},
         ],
         model="qwen/qwen3.8-27b",
-        max_tokens=300,  # Permite una respuesta más amplia
+        max_tokens=300,
     )
     ai_response_raw = chat_completion.choices[0].message.content
     print(f"Respuesta cruda de la IA: {ai_response_raw}")
@@ -144,7 +144,6 @@ def descargar_stt():
 
 @app.route("/logs/ai", methods=["GET"])
 def descargar_ai():
-  # Descarga la versión con formato markdown y saltos de línea (sin emojis)
   if os.path.exists(AI_FILE):
     return send_file(AI_FILE, mimetype="text/plain", as_attachment=True)
   return "Archivo AI con formato no encontrado", 404
@@ -152,10 +151,9 @@ def descargar_ai():
 
 @app.route("/logs/ai-limpio", methods=["GET"])
 def descargar_ai_limpio():
-  # Descarga la versión totalmente plana y lineal
   if os.path.exists(AI_LIMPIO_FILE):
     return send_file(AI_LIMPIO_FILE, mimetype="text/plain", as_attachment=True)
-    return "Archivo AI limpio no encontrado", 404
+  return "Archivo AI limpio no encontrado", 404
 
 
 if __name__ == "__main__":
