@@ -96,9 +96,11 @@ def procesar_voz():
     with open(AI_FILE, "w", encoding="utf-8") as f:
       f.write(ai_sin_emojis)
 
-    # --- ARCHIVO 2: ai_limpio.txt (Sin emojis, sin markdown, sin saltos de línea) ---
+    # --- ARCHIVO 2: ai_limpio.txt (Sin emojis, sin markdown, sin saltos de línea ni retornos) ---
     texto_limpio_espeak = re.sub(r"[\*\#\_\-\`]", "", ai_sin_emojis)
-    texto_limpio_espeak = texto_limpio_espeak.replace("\n", " ")
+    texto_limpio_espeak = texto_limpio_espeak.replace("\r", " ").replace(
+        "\n", " "
+    )
     texto_limpio_espeak = re.sub(r"\s+", " ", texto_limpio_espeak).strip()
 
     with open(AI_LIMPIO_FILE, "w", encoding="utf-8") as f:
@@ -108,17 +110,40 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 3. TTS: Enviar el texto súper limpio a eSpeak por POST
-    espeak_response = requests.post(
-        ESPEAK_SERVICE_URL,
-        data=texto_limpio_espeak.encode("utf-8"),
-        headers={"Content-Type": "text/plain"},
+    # 3. TTS: Enviar el texto súper limpio a eSpeak por POST con manejo detallado de errores
+    print(
+        f"Enviando texto a eSpeak URL: {ESPEAK_SERVICE_URL} con texto:"
+        f" {texto_limpio_espeak}"
     )
 
-    if espeak_response.status_code != 200:
+    try:
+      espeak_response = requests.post(
+          ESPEAK_SERVICE_URL,
+          data=texto_limpio_espeak.encode("utf-8"),
+          headers={"Content-Type": "text/plain"},
+          timeout=30,
+      )
+      print(f"Respuesta de eSpeak - Status Code: {espeak_response.status_code}")
+    except Exception as e:
+      print(f"Error de conexión con eSpeak: {str(e)}")
       return (
           jsonify({
-              "error": "Fallo al generar el audio en el servicio eSpeak",
+              "error": f"No se pudo conectar con el servicio eSpeak: {str(e)}",
+              "stt": stt_text,
+              "ai": ai_sin_emojis,
+          }),
+          500,
+      )
+
+    if espeak_response.status_code != 200:
+      print(f"eSpeak devolvió error body: {espeak_response.text}")
+      return (
+          jsonify({
+              "error": (
+                  f"Fallo al generar el audio en el servicio eSpeak (Status"
+                  f" {espeak_response.status_code})"
+              ),
+              "detalle_espeak": espeak_response.text,
               "stt": stt_text,
               "ai": ai_sin_emojis,
           }),
