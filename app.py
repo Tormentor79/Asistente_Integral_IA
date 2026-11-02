@@ -1,14 +1,11 @@
 import os
 import requests
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request
 from groq import Groq
 
 app = Flask(__name__)
 
-# Inicializamos el cliente de Groq usando la variable de entorno que configuraremos en Render
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-
-# URL de tu servicio eSpeak actual en Render (para convertir texto a audio)
+# URL de tu servicio eSpeak actual en Render
 ESPEAK_SERVICE_URL = os.environ.get(
     "ESPEAK_SERVICE_URL", "https://tu-espeak-server.onrender.com/tts"
 )
@@ -25,6 +22,16 @@ def home():
 @app.route("/procesar-voz", methods=["POST"])
 def procesar_voz():
   try:
+    # Inicializamos el cliente de Groq aquí adentro de forma segura
+    groq_api_key = os.environ.get("GROQ_API_KEY")
+    if not groq_api_key:
+      return (
+          jsonify({"error": "GROQ_API_KEY no configurada en las variables de Render"}),
+          500,
+      )
+
+    client = Groq(api_key=groq_api_key)
+
     # 1. Verificar si llegó un archivo de audio en la petición
     if "audio" not in request.files:
       return jsonify({"error": "No se encontró el archivo de audio"}), 400
@@ -55,7 +62,7 @@ def procesar_voz():
             "role": "user",
             "content": stt_text,
         }],
-        model="qwen/qwen3.8-27b",  # O el modelo que estés usando
+        model="qwen/qwen3.8-27b",
     )
     ai_response_text = chat_completion.choices[0].message.content
     print(f"Respuesta de la IA: {ai_response_text}")
@@ -64,8 +71,7 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 4. TTS: Mandar el texto de la IA a tu servicio eSpeak para generar el audio de salida
-    # (Opcional: puedes mandar la respuesta como audio directo o empaquetarla)
+    # 4. TTS: Mandar el texto de la IA a tu servicio eSpeak
     espeak_response = requests.post(
         ESPEAK_SERVICE_URL,
         data=ai_response_text.encode("utf-8"),
@@ -82,9 +88,6 @@ def procesar_voz():
           500,
       )
 
-    # Revisamos las cabeceras (headers) si el ESP8266 pide guardar los .txt en la SD
-    # Si el cliente pide los textos, podemos devolverlos de forma limpia o mantenerlos en endpoints dedicados.
-    # Por ahora, devolvemos el binario de audio de eSpeak directamente:
     return espeak_response.content, 200, {"Content-Type": "audio/mpeg"}
 
   except Exception as e:
