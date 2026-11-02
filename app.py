@@ -71,10 +71,25 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 4. TTS: Mandar el texto de la IA a tu servicio eSpeak
+    # 4. TTS: Limpiar formato markdown (asteriscos, viñetas) manteniendo acentos y puntuación
+    import re
+
+    texto_para_voz = ai_response_text
+
+    # Quitamos símbolos molestos de markdown (*, #, -, _, `)
+    texto_para_voz = re.sub(r"[\*\#\_\-\`]", "", texto_para_voz)
+
+    # Reemplazamos saltos de línea por espacios para que eSpeak no haga silencios raros
+    texto_para_voz = texto_para_voz.replace("\n", " ")
+
+    # Limpiamos espacios dobles generados por los reemplazos
+    texto_para_voz = re.sub(r"\s+", " ", texto_para_voz).strip()
+
+    print(f"Texto limpio para eSpeak: {texto_para_voz}")
+
     espeak_response = requests.post(
         ESPEAK_SERVICE_URL,
-        data=ai_response_text.encode("utf-8"),
+        data=texto_para_voz.encode("utf-8"),
         headers={"Content-Type": "text/plain"},
     )
 
