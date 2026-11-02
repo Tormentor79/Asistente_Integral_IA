@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from flask import Flask, jsonify, request, send_file
 from groq import Groq
@@ -9,9 +10,19 @@ ESPEAK_SERVICE_URL = os.environ.get(
     "ESPEAK_SERVICE_URL", "https://tu-espeak-server.onrender.com/tts"
 )
 
-# Archivos temporales donde guardamos el último intercambio
+# Archivos temporales locales en el servidor
 STT_FILE = "stt.txt"
-AI_FILE = "ai.txt"
+AI_FILE = "ai.txt"  # Con formato markdown y saltos de línea (sin emojis)
+AI_LIMPIO_FILE = "ai_limpio.txt"  # Texto plano absoluto para eSpeak
+
+
+def limpiar_emojis(texto):
+  # Patrón para eliminar emojis y símbolos gráficos Unicode
+  return re.sub(
+      r"[\U00010000-\U0010ffff]|[\u2600-\u27BF]|[\U0001f300-\U0001f9ff]",
+      "",
+      texto,
+  )
 
 
 @app.route("/", methods=["GET"])
@@ -51,31 +62,56 @@ def procesar_voz():
     )
     print(f"Texto reconocido (STT): {stt_text}")
 
-    # Guardamos el STT en stt.txt
+    # Guardar STT en stt.txt
     with open(STT_FILE, "w", encoding="utf-8") as f:
       f.write(stt_text)
 
-    # 2. LLM: Qwen
+    # 2. LLM: Qwen (permitiendo explayarse pero sin emojis)
     print("Procesando respuesta con la IA...")
     chat_completion = client.chat.completions.create(
-        messages=[{"role": "user", "content": stt_text}],
+        messages=[
+            {
+                "role": "system",
+                (
+                    "content": "Eres un asistente de voz inteligente. Puedes"
+                    " explayarte de forma natural y detallada (aproximadamente"
+                    " unas 4 o 5 oraciones). NO utilices emojis bajo ningún"
+                    " concepto. Puedes usar formato markdown y saltos de"
+                    " línea si lo consideras útil para estructurar tu"
+                    " respuesta."
+                ),
+            },
+            {"role": "user", "content": stt_text},
+        ],
         model="qwen/qwen3.8-27b",
+        max_tokens=300,  # Permite una respuesta más amplia
     )
-    ai_response_text = chat_completion.choices[0].message.content
-    print(f"Respuesta de la IA: {ai_response_text}")
+    ai_response_raw = chat_completion.choices[0].message.content
+    print(f"Respuesta cruda de la IA: {ai_response_raw}")
 
-    # Guardamos la respuesta en ai.txt
+    # Limpiamos únicamente los emojis para el primer archivo
+    ai_sin_emojis = limpiar_emojis(ai_response_raw)
+
+    # --- ARCHIVO 1: ai.txt (Conserva formato markdown y saltos de línea, sin emojis) ---
     with open(AI_FILE, "w", encoding="utf-8") as f:
-      f.write(ai_response_text)
+      f.write(ai_sin_emojis)
 
-    # Limpiamos el audio temporal
+    # --- ARCHIVO 2: ai_limpio.txt (Sin emojis, sin markdown, sin saltos de línea) ---
+    texto_limpio_espeak = re.sub(r"[\*\#\_\-\`]", "", ai_sin_emojis)
+    texto_limpio_espeak = texto_limpio_espeak.replace("\n", " ")
+    texto_limpio_espeak = re.sub(r"\s+", " ", texto_limpio_espeak).strip()
+
+    with open(AI_LIMPIO_FILE, "w", encoding="utf-8") as f:
+      f.write(texto_limpio_espeak)
+
+    # Limpiar el audio temporal de entrada
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 3. TTS: Mandar el contenido de ai.txt a eSpeak por POST (datos crudos)
+    # 3. TTS: Enviar el texto súper limpio a eSpeak por POST
     espeak_response = requests.post(
         ESPEAK_SERVICE_URL,
-        data=ai_response_text.encode("utf-8"),
+        data=texto_limpio_espeak.encode("utf-8"),
         headers={"Content-Type": "text/plain"},
     )
 
@@ -84,7 +120,7 @@ def procesar_voz():
           jsonify({
               "error": "Fallo al generar el audio en el servicio eSpeak",
               "stt": stt_text,
-              "ai": ai_response_text,
+              "ai": ai_sin_emojis,
           }),
           500,
       )
@@ -96,19 +132,30 @@ def procesar_voz():
     return jsonify({"error": str(e)}), 500
 
 
-# Endpoints para que el ESP8266 descargue los archivos de texto directamente a la SD
+# --- ENDPOINTS DE DESCARGA PARA LA SD DEL ESP8266 ---
+
+
 @app.route("/logs/stt", methods=["GET"])
 def descargar_stt():
   if os.path.exists(STT_FILE):
     return send_file(STT_FILE, mimetype="text/plain", as_attachment=True)
-  return "Archivo no encontrado", 404
+  return "Archivo STT no encontrado", 404
 
 
 @app.route("/logs/ai", methods=["GET"])
 def descargar_ai():
+  # Descarga la versión con formato markdown y saltos de línea (sin emojis)
   if os.path.exists(AI_FILE):
     return send_file(AI_FILE, mimetype="text/plain", as_attachment=True)
-  return "Archivo no encontrado", 404
+  return "Archivo AI con formato no encontrado", 404
+
+
+@app.route("/logs/ai-limpio", methods=["GET"])
+def descargar_ai_limpio():
+  # Descarga la versión totalmente plana y lineal
+  if os.path.exists(AI_LIMPIO_FILE):
+    return send_file(AI_LIMPIO_FILE, mimetype="text/plain", as_attachment=True)
+    return "Archivo AI limpio no encontrado", 404
 
 
 if __name__ == "__main__":
