@@ -1,48 +1,44 @@
 import os
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from groq import Groq
 
 app = Flask(__name__)
 
-# URL de tu servicio eSpeak actual en Render
 ESPEAK_SERVICE_URL = os.environ.get(
     "ESPEAK_SERVICE_URL", "https://tu-espeak-server.onrender.com/tts"
 )
 
+# Archivos temporales donde guardamos el último intercambio
+STT_FILE = "stt.txt"
+AI_FILE = "ai.txt"
+
 
 @app.route("/", methods=["GET"])
 def home():
-  return (
-      "¡Servidor Integral de Voz funcionando correctamente!",
-      200,
-  )
+  return "¡Servidor Integral de Voz funcionando correctamente!", 200
 
 
 @app.route("/procesar-voz", methods=["POST"])
 def procesar_voz():
   try:
-    # Inicializamos el cliente de Groq aquí adentro de forma segura
     groq_api_key = os.environ.get("GROQ_API_KEY")
     if not groq_api_key:
       return (
-          jsonify({"error": "GROQ_API_KEY no configurada en las variables de Render"}),
+          jsonify({"error": "GROQ_API_KEY no configurada en Render"}),
           500,
       )
 
     client = Groq(api_key=groq_api_key)
 
-    # 1. Verificar si llegó un archivo de audio en la petición
     if "audio" not in request.files:
       return jsonify({"error": "No se encontró el archivo de audio"}), 400
 
     audio_file = request.files["audio"]
-
-    # Guardamos temporalmente el audio recibido para enviarlo a Groq
     temp_audio_path = "temp_input.wav"
     audio_file.save(temp_audio_path)
 
-    # 2. STT: Enviar audio a Groq (Whisper)
+    # 1. STT: Whisper
     print("Transcribiendo audio con Whisper...")
     with open(temp_audio_path, "rb") as file:
       transcription = client.audio.transcriptions.create(
@@ -55,41 +51,31 @@ def procesar_voz():
     )
     print(f"Texto reconocido (STT): {stt_text}")
 
-    # 3. LLM: Enviar el texto reconocido al modelo de chat de Groq
+    # Guardamos el STT en stt.txt
+    with open(STT_FILE, "w", encoding="utf-8") as f:
+      f.write(stt_text)
+
+    # 2. LLM: Qwen
     print("Procesando respuesta con la IA...")
     chat_completion = client.chat.completions.create(
-        messages=[{
-            "role": "user",
-            "content": stt_text,
-        }],
+        messages=[{"role": "user", "content": stt_text}],
         model="qwen/qwen3.8-27b",
     )
     ai_response_text = chat_completion.choices[0].message.content
     print(f"Respuesta de la IA: {ai_response_text}")
 
-    # Limpiamos el archivo temporal de audio del disco
+    # Guardamos la respuesta en ai.txt
+    with open(AI_FILE, "w", encoding="utf-8") as f:
+      f.write(ai_response_text)
+
+    # Limpiamos el audio temporal
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 4. TTS: Limpiar formato markdown (asteriscos, viñetas) manteniendo acentos y puntuación
-    import re
-
-    texto_para_voz = ai_response_text
-
-    # Quitamos símbolos molestos de markdown (*, #, -, _, `)
-    texto_para_voz = re.sub(r"[\*\#\_\-\`]", "", texto_para_voz)
-
-    # Reemplazamos saltos de línea por espacios para que eSpeak no haga silencios raros
-    texto_para_voz = texto_para_voz.replace("\n", " ")
-
-    # Limpiamos espacios dobles generados por los reemplazos
-    texto_para_voz = re.sub(r"\s+", " ", texto_para_voz).strip()
-
-    print(f"Texto limpio para eSpeak: {texto_para_voz}")
-
+    # 3. TTS: Mandar el contenido de ai.txt a eSpeak por POST (datos crudos)
     espeak_response = requests.post(
         ESPEAK_SERVICE_URL,
-        data=texto_para_voz.encode("utf-8"),
+        data=ai_response_text.encode("utf-8"),
         headers={"Content-Type": "text/plain"},
     )
 
@@ -108,6 +94,21 @@ def procesar_voz():
   except Exception as e:
     print(f"Error crítico en el servidor: {str(e)}")
     return jsonify({"error": str(e)}), 500
+
+
+# Endpoints para que el ESP8266 descargue los archivos de texto directamente a la SD
+@app.route("/logs/stt", methods=["GET"])
+def descargar_stt():
+  if os.path.exists(STT_FILE):
+    return send_file(STT_FILE, mimetype="text/plain", as_attachment=True)
+  return "Archivo no encontrado", 404
+
+
+@app.route("/logs/ai", methods=["GET"])
+def descargar_ai():
+  if os.path.exists(AI_FILE):
+    return send_file(AI_FILE, mimetype="text/plain", as_attachment=True)
+  return "Archivo no encontrado", 404
 
 
 if __name__ == "__main__":
