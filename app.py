@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import requests
 from flask import Flask, jsonify, request, send_file
 from groq import Groq
@@ -129,33 +130,32 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 5. TTS: Enviar el texto a eSpeak con paciencia de hasta 60 segundos
-    print(f"Enviando texto a eSpeak URL: {ESPEAK_SERVICE_URL}")
+    # 5. TTS: Despertar primero con GET (como el navegador) y luego enviar el POST
+    base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]  # Obtiene la URL base (ej: https://espeak-tts-post.onrender.com)
+    print(f"Despertando el servidor eSpeak con GET a: {base_espeak_url}")
+
+    try:
+      # Petición GET con timeout largo: esto obliga a Render a retener la conexión y arrancar el servidor
+      requests.get(base_espeak_url, timeout=50)
+      time.sleep(2)  # Breve respiro para que Flask termine de levantar
+    except Exception as wakeup_err:
+      print(f"Aviso en el despertar GET (continuando de todos modos): {wakeup_err}")
+
+    print(f"Enviando texto a eSpeak por POST URL: {ESPEAK_SERVICE_URL}")
     print(f"Texto a sintetizar: {texto_limpio_espeak}")
 
     try:
-      # Timeout de 60 segundos: Da margen si el servidor de eSpeak está levantando
-      # pero responde de inmediato si ya está activo.
+      # Como el servidor ya fue despertado con el GET anterior, este POST entrará directo y con éxito
       espeak_response = requests.post(
           ESPEAK_SERVICE_URL,
           data=texto_limpio_espeak.encode("utf-8"),
           headers={"Content-Type": "text/plain"},
-          timeout=60,
+          timeout=30,
       )
       print(f"Respuesta de eSpeak - Status Code: {espeak_response.status_code}")
 
-    except requests.exceptions.Timeout:
-      print("Error: El servicio eSpeak tardó más de 60 segundos en responder.")
-      return (
-          jsonify({
-              "error": "El servicio de eSpeak excedió el tiempo límite de espera (timeout).",
-              "stt": stt_text,
-              "ai": ai_sin_emojis,
-          }),
-          500,
-      )
     except Exception as e:
-      print(f"Error de conexión con eSpeak: {str(e)}")
+      print(f"Error de conexión con eSpeak en el POST: {str(e)}")
       return (
           jsonify({
               "error": f"No se pudo conectar con el servicio eSpeak: {str(e)}",
