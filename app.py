@@ -12,10 +12,37 @@ ESPEAK_SERVICE_URL = os.environ.get(
 )
 
 # Archivos temporales locales en el servidor
-STT_FILE = "stt.txt"
-AI_FILE = "ai.txt"  # Con formato markdown y saltos de línea (sin emojis)
-AI_LIMPIO_FILE = "ai_limpio.txt"  # Texto plano absoluto para eSpeak
+#STT_FILE = "stt.txt"
+#AI_FILE = "ai.txt"  # Con formato markdown y saltos de línea (sin emojis)
+#AI_LIMPIO_FILE = "ai_limpio.txt"  # Texto plano absoluto para eSpeak
+#---------------------------------------------------------------------
 
+# Rutas absolutas seguras en la carpeta actual del script
+STT_FILE = os.path.join(os.getcwd(), "stt.txt")
+AI_FILE = os.path.join(os.getcwd(), "ai.txt")
+AI_LIMPIO_FILE = os.path.join(os.getcwd(), "ai_limpio.txt")
+
+
+@app.route("/logs/stt", methods=["GET"])
+def get_stt_log():
+  if os.path.exists(STT_FILE):
+    return send_file(STT_FILE, mimetype="text/plain")
+  return "Archivo stt.txt no encontrado aún", 404
+
+
+@app.route("/logs/ai", methods=["GET"])
+def get_ai_log():
+  if os.path.exists(AI_FILE):
+    return send_file(AI_FILE, mimetype="text/plain")
+  return "Archivo ai.txt no encontrado aún", 404
+
+
+@app.route("/logs/ai-limpio", methods=["GET"])
+def get_ai_limpio_log():
+  if os.path.exists(AI_LIMPIO_FILE):
+    return send_file(AI_LIMPIO_FILE, mimetype="text/plain")
+  return "Archivo ai_limpio.txt no encontrado aún", 404
+#-----------------------------------------------------------
 
 def limpiar_emojis(texto):
   # Patrón para eliminar emojis y símbolos gráficos Unicode
