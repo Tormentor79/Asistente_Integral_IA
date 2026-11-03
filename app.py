@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import requests
 from flask import Flask, jsonify, request, send_file
 from groq import Groq
@@ -129,40 +130,44 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 5. TTS: Enviar el texto limpio a eSpeak por POST
-    print(
-        f"Enviando texto a eSpeak URL: {ESPEAK_SERVICE_URL} con texto:"
-        f" {texto_limpio_espeak}"
-    )
+    # 5. TTS: Enviar el texto limpio a eSpeak con reintentos automáticos
+    print(f"Enviando texto a eSpeak URL: {ESPEAK_SERVICE_URL}")
 
-    try:
-      espeak_response = requests.post(
-          ESPEAK_SERVICE_URL,
-          data=texto_limpio_espeak.encode("utf-8"),
-          headers={"Content-Type": "text/plain"},
-          timeout=30,
-      )
-      print(f"Respuesta de eSpeak - Status Code: {espeak_response.status_code}")
-    except Exception as e:
-      print(f"Error de conexión con eSpeak: {str(e)}")
+    espeak_response = None
+    max_intentos = 3
+    tiempo_espera = 3  # Segundos de tregua para que despierte el servidor de eSpeak
+
+    for intento in range(1, max_intentos + 1):
+      try:
+        espeak_response = requests.post(
+            ESPEAK_SERVICE_URL,
+            data=texto_limpio_espeak.encode("utf-8"),
+            headers={"Content-Type": "text/plain"},
+            timeout=30,
+        )
+        print(f"Intento {intento} - eSpeak Status Code: {espeak_response.status_code}")
+
+        if espeak_response.status_code == 200:
+          break
+        elif espeak_response.status_code in [502, 503, 504]:
+          print(f"⚠️ eSpeak está despertando (Status {espeak_response.status_code}). Reintentando en {tiempo_espera}s...")
+        else:
+          break
+
+      except Exception as e:
+        print(f"⚠️ Intento {intento} fallido por conexión: {str(e)}")
+
+      if intento < max_intentos:
+        time.sleep(tiempo_espera)
+
+    if not espeak_response or espeak_response.status_code != 200:
+      status_err = espeak_response.status_code if espeak_response else "Sin respuesta"
+      error_text = espeak_response.text if espeak_response else "Timeout de conexión"
+      print(f"❌ eSpeak falló definitivamente. Detalle: {error_text}")
       return (
           jsonify({
-              "error": f"No se pudo conectar con el servicio eSpeak: {str(e)}",
-              "stt": stt_text,
-              "ai": ai_sin_emojis,
-          }),
-          500,
-      )
-
-    if espeak_response.status_code != 200:
-      print(f"eSpeak devolvió error body: {espeak_response.text}")
-      return (
-          jsonify({
-              "error": (
-                  f"Fallo al generar el audio en el servicio eSpeak (Status"
-                  f" {espeak_response.status_code})"
-              ),
-              "detalle_espeak": espeak_response.text,
+              "error": f"Fallo al conectar con eSpeak tras {max_intentos} intentos (Status {status_err})",
+              "detalle_espeak": error_text,
               "stt": stt_text,
               "ai": ai_sin_emojis,
           }),
