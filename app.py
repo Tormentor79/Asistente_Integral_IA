@@ -130,22 +130,35 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 5. TTS: Despertar primero con GET (como el navegador) y luego enviar el POST
-    base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]  # Obtiene la URL base (ej: https://espeak-tts-post.onrender.com)
-    print(f"Despertando el servidor eSpeak con GET a: {base_espeak_url}")
+    # 5. TTS: Despertar y verificar con GET en bucle hasta que responda 200 OK
+    base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]  # Obtiene la URL base
+    print(f"Despertando y esperando a que eSpeak esté listo en: {base_espeak_url}")
 
-    try:
-      # Petición GET con timeout largo: esto obliga a Render a retener la conexión y arrancar el servidor
-      requests.get(base_espeak_url, timeout=50)
-      time.sleep(2)  # Breve respiro para que Flask termine de levantar
-    except Exception as wakeup_err:
-      print(f"Aviso en el despertar GET (continuando de todos modos): {wakeup_err}")
+    servidor_listo = False
+    intentos_despertar = 20  # Hasta 20 intentos x 3 segundos = 60 segundos de paciencia máxima
+
+    for intento in range(1, intentos_despertar + 1):
+      try:
+        res_get = requests.get(base_espeak_url, timeout=5)
+        if res_get.status_code == 200:
+          print(f"¡Servidor eSpeak despertó con éxito en el intento {intento}!")
+          servidor_listo = True
+          break
+        else:
+          print(f"Intento {intento}/{intentos_despertar}: Servidor respondiendo con status {res_get.status_code} (durmiendo). Esperando 3s...")
+      except Exception as e:
+        print(f"Intento {intento}/{intentos_despertar}: Conexión en curso ({e}). Esperando 3s...")
+      
+      time.sleep(3)
+
+    if not servidor_listo:
+      print("Aviso: Se agotaron los intentos de espera para el despertar.")
 
     print(f"Enviando texto a eSpeak por POST URL: {ESPEAK_SERVICE_URL}")
     print(f"Texto a sintetizar: {texto_limpio_espeak}")
 
     try:
-      # Como el servidor ya fue despertado con el GET anterior, este POST entrará directo y con éxito
+      # El POST se ejecuta cuando se confirma que el servidor está despierto
       espeak_response = requests.post(
           ESPEAK_SERVICE_URL,
           data=texto_limpio_espeak.encode("utf-8"),
