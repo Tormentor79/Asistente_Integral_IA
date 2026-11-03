@@ -47,7 +47,7 @@ def procesar_voz():
     if "audio" not in request.files:
       return jsonify({"error": "No se encontró el archivo de audio"}), 400
 
-    # 1. Capturar parámetros del cliente (modo y motor TTS)
+    # 1. Capturar los parámetros enviados por el cliente (modo y motor TTS)
     modo = request.form.get("modo", "normal")       # 'corto', 'normal', 'largo'
     tts_motor = request.form.get("tts", "canopy")   # 'canopy' por defecto, o 'espeak'
     
@@ -133,10 +133,10 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 5. TTS: Enrutamiento inteligente (Canopy principal + eSpeak con tu lógica intacta de respaldo)
+    # 5. TTS: ENRUTAMIENTO (Canopy por defecto, con respaldo o selección de eSpeak)
     audio_bytes = None
 
-    # Intentar con Canopy (Groq) si fue seleccionado
+    # Intentar con Canopy (Groq) si el usuario lo dejó como predeterminado
     if tts_motor == "canopy":
       print("Generando audio con Canopy (Groq)...")
       try:
@@ -151,13 +151,13 @@ def procesar_voz():
         print(f"Aviso: Falló Canopy ({canopy_err}). Cambiando automáticamente a eSpeak...")
         tts_motor = "espeak"  # Fuerza la caída en el bloque de eSpeak
 
-    # Si se pidió eSpeak o falló Canopy, ejecutamos tu código original intacto
+    # Si se pidió eSpeak explícitamente o falló Canopy, usamos tu bloque original exacto
     if tts_motor == "espeak":
       base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]  # Obtiene la URL base
       print(f"Despertando eSpeak mediante GET en: {base_espeak_url}")
 
       try:
-        # Petición GET con timeout de 45s (mantiene la lógica que ya te funcionaba)
+        # Petición GET con timeout largo de 45 segundos (tu lógica probada y funcional)
         res_get = requests.get(base_espeak_url, timeout=45)
         print(f"Servidor despertó. Status Code del GET: {res_get.status_code}")
       except Exception as wakeup_err:
@@ -170,6 +170,7 @@ def procesar_voz():
       print(f"Texto a sintetizar: {texto_limpio_espeak}")
 
       try:
+        # Ahora el POST se ejecuta con el servidor ya activo
         espeak_response = requests.post(
             ESPEAK_SERVICE_URL,
             data=texto_limpio_espeak.encode("utf-8"),
