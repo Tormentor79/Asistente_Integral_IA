@@ -47,9 +47,9 @@ def procesar_voz():
     if "audio" not in request.files:
       return jsonify({"error": "No se encontró el archivo de audio"}), 400
 
-    # 1. Capturar parámetros dinámicos del formulario multipart enviados por el cliente/ESP8266
-    modo = request.form.get("modo", "normal")       # 'corto', 'normal' o 'largo'
-    tts_motor = request.form.get("tts", "canopy")   # 'canopy' (por defecto) o 'espeak'
+    # 1. Capturar parámetros del cliente (modo y motor TTS)
+    modo = request.form.get("modo", "normal")       # 'corto', 'normal', 'largo'
+    tts_motor = request.form.get("tts", "canopy")   # 'canopy' por defecto, o 'espeak'
     
     print(f"Modo de respuesta solicitado: {modo}")
     print(f"Motor TTS solicitado: {tts_motor}")
@@ -133,35 +133,37 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 5. TTS: ENRUTAMIENTO INTELIGENTE (Canopy en Groq como principal + eSpeak en Render como respaldo)
+    # 5. TTS: Enrutamiento inteligente (Canopy principal + eSpeak con tu lógica intacta de respaldo)
     audio_bytes = None
 
-    # --- OPCIÓN A: Intentar con Canopy/Orpheus vía API de Groq ---
+    # Intentar con Canopy (Groq) si fue seleccionado
     if tts_motor == "canopy":
-      print("Generando audio TTS con Canopy (Groq)...")
+      print("Generando audio con Canopy (Groq)...")
       try:
         response_tts = client.audio.speech.create(
-            model="canopylabs/orpheus-v1",  # Ajustar según el identificador de modelo disponible en tu consola de Groq
+            model="canopylabs/orpheus-v1",  # Ajustar según modelo disponible en Groq
             voice="default",
             input=texto_limpio_espeak,
         )
         audio_bytes = response_tts.read()
         print("¡Audio generado con éxito mediante Canopy!")
       except Exception as canopy_err:
-        print(f"Aviso: Falló el servicio Canopy ({canopy_err}). Conmutando automáticamente a eSpeak (Respaldo)...")
-        tts_motor = "espeak"  # Fuerza la entrada al bloque de respaldo eSpeak
+        print(f"Aviso: Falló Canopy ({canopy_err}). Cambiando automáticamente a eSpeak...")
+        tts_motor = "espeak"  # Fuerza la caída en el bloque de eSpeak
 
-    # --- OPCIÓN B: eSpeak en Render (Respaldo si falló Canopy o si fue solicitado explícitamente) ---
+    # Si se pidió eSpeak o falló Canopy, ejecutamos tu código original intacto
     if tts_motor == "espeak":
-      base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]
+      base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]  # Obtiene la URL base
       print(f"Despertando eSpeak mediante GET en: {base_espeak_url}")
 
       try:
+        # Petición GET con timeout de 45s (mantiene la lógica que ya te funcionaba)
         res_get = requests.get(base_espeak_url, timeout=45)
-        print(f"Servidor eSpeak despertó. Status Code del GET: {res_get.status_code}")
+        print(f"Servidor despertó. Status Code del GET: {res_get.status_code}")
       except Exception as wakeup_err:
-        print(f"Aviso en el despertar GET de eSpeak (continuando de todas formas): {wakeup_err}")
+        print(f"Aviso en el despertar GET (continuando de todas formas): {wakeup_err}")
 
+      # Breve pausa de seguridad para asegurar que Flask esté listo para recibir el POST
       time.sleep(2)
 
       print(f"Enviando texto a eSpeak por POST URL: {ESPEAK_SERVICE_URL}")
@@ -176,21 +178,6 @@ def procesar_voz():
         )
         print(f"Respuesta de eSpeak - Status Code: {espeak_response.status_code}")
 
-        if espeak_response.status_code == 200:
-          audio_bytes = espeak_response.content
-          print("¡Audio generado con éxito mediante eSpeak!")
-        else:
-          print(f"eSpeak devolvió error body: {espeak_response.text}")
-          return (
-              jsonify({
-                  "error": f"Fallo al generar el audio en eSpeak (Status {espeak_response.status_code})",
-                  "detalle_espeak": espeak_response.text,
-                  "stt": stt_text,
-                  "ai": ai_sin_emojis,
-              }),
-              500,
-          )
-
       except Exception as e:
         print(f"Error de conexión con eSpeak en el POST: {str(e)}")
         return (
@@ -202,11 +189,28 @@ def procesar_voz():
             500,
         )
 
-    # Retornar la respuesta de audio al cliente/ESP8266
+      if espeak_response.status_code != 200:
+        print(f"eSpeak devolvió error body: {espeak_response.text}")
+        return (
+            jsonify({
+                "error": (
+                    f"Fallo al generar el audio en el servicio eSpeak (Status"
+                    f" {espeak_response.status_code})"
+                ),
+                "detalle_espeak": espeak_response.text,
+                "stt": stt_text,
+                "ai": ai_sin_emojis,
+            }),
+            500,
+        )
+
+      audio_bytes = espeak_response.content
+
+    # Retornamos los bytes del audio (ya sea de Canopy o de eSpeak) al ESP8266
     if audio_bytes:
       return audio_bytes, 200, {"Content-Type": "audio/mpeg"}
     else:
-      return jsonify({"error": "No se pudo sintetizar el audio con ningún motor TTS disponible"}), 500
+      return jsonify({"error": "No se pudo generar audio con ningún motor"}), 500
 
   except Exception as e:
     print(f"Error crítico en el servidor: {str(e)}")
