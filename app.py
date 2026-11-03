@@ -133,7 +133,7 @@ def procesar_voz():
     # 5. TTS: Verificar estado, despertar y enviar el texto limpio a eSpeak por POST
     print("Verificando estado del servidor eSpeak...")
     base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]  # Obtiene la URL base
-    intentos_maximos = 10
+    intentos_maximos = 15  # 15 intentos x 2 segundos = hasta 30 segundos de espera activa
     servidor_despierto = False
 
     try:
@@ -145,79 +145,5 @@ def procesar_voz():
             print(f"¡Servidor eSpeak despierto y listo (intento {intento})!")
             servidor_despierto = True
             break
-        except requests.exceptions.RequestException:
-          print(f"Intento {intento}/{intentos_maximos}: Servidor durmiendo, esperando 2 segundos...")
-          time.sleep(2)
-
-      if not servidor_despierto:
-        print("Aviso: Se agotaron los intentos de sondeo, intentaremos el POST de todas formas...")
-
-      print(f"Enviando texto a eSpeak URL: {ESPEAK_SERVICE_URL} con texto: {texto_limpio_espeak}")
-      
-      espeak_response = requests.post(
-          ESPEAK_SERVICE_URL,
-          data=texto_limpio_espeak.encode("utf-8"),
-          headers={"Content-Type": "text/plain"},
-          timeout=30,
-      )
-      print(f"Respuesta de eSpeak - Status Code: {espeak_response.status_code}")
-
-    except Exception as e:
-      print(f"Error de conexión con eSpeak: {str(e)}")
-      return (
-          jsonify({
-              "error": f"No se pudo conectar con el servicio eSpeak: {str(e)}",
-              "stt": stt_text,
-              "ai": ai_sin_emojis,
-          }),
-          500,
-      )
-
-    if espeak_response.status_code != 200:
-      print(f"eSpeak devolvió error body: {espeak_response.text}")
-      return (
-          jsonify({
-              "error": (
-                  f"Fallo al generar el audio en el servicio eSpeak (Status"
-                  f" {espeak_response.status_code})"
-              ),
-              "detalle_espeak": espeak_response.text,
-              "stt": stt_text,
-              "ai": ai_sin_emojis,
-          }),
-          500,
-      )
-
-    return espeak_response.content, 200, {"Content-Type": "audio/mpeg"}
-
-  except Exception as e:
-    print(f"Error crítico en el servidor: {str(e)}")
-    return jsonify({"error": str(e)}), 500
-
-
-# --- ENDPOINTS DE DESCARGA PARA LA SD DEL ESP8266 ---
-
-
-@app.route("/logs/stt", methods=["GET"])
-def descargar_stt():
-  if os.path.exists(STT_FILE):
-    return send_file(STT_FILE, mimetype="text/plain", as_attachment=True)
-  return "Archivo STT no encontrado", 404
-
-
-@app.route("/logs/ai", methods=["GET"])
-def descargar_ai():
-  if os.path.exists(AI_FILE):
-    return send_file(AI_FILE, mimetype="text/plain", as_attachment=True)
-  return "Archivo AI con formato no encontrado", 404
-
-
-@app.route("/logs/ai-limpio", methods=["GET"])
-def descargar_ai_limpio():
-  if os.path.exists(AI_LIMPIO_FILE):
-    return send_file(AI_LIMPIO_FILE, mimetype="text/plain", as_attachment=True)
-  return "Archivo AI limpio no encontrado", 404
-
-
-if __name__ == "__main__":
-  app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+          else:
+            print(f"Intento {intento}/{intentos_maximos}: Estado {response.status_code
