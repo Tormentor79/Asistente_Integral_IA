@@ -1,6 +1,5 @@
 import os
 import re
-import time
 import requests
 from flask import Flask, jsonify, request, send_file
 from groq import Groq
@@ -130,40 +129,17 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 5. TTS: Verificar estado, despertar y enviar el texto limpio a eSpeak por POST
-    print("Verificando estado del servidor eSpeak...")
-    base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]  # Obtiene la URL base
-    intentos_maximos = 15  # 15 intentos x 2 segundos = hasta 30 segundos de espera activa
-    servidor_despierto = False
+    # 5. TTS: Enviar el texto a eSpeak esperando pacientemente (como hace el navegador)
+    print(f"Enviando texto a eSpeak URL (esperando arranque en frío si está dormido): {ESPEAK_SERVICE_URL}")
+    print(f"Texto a sintetizar: {texto_limpio_espeak}")
 
     try:
-      # Bucle de sondeo para despertar el servidor si está dormido
-      for intento in range(1, intentos_maximos + 1):
-        try:
-          response = requests.get(base_espeak_url, timeout=5)
-          if response.status_code < 500:
-            print(f"¡Servidor eSpeak despierto y listo (intento {intento})!")
-            servidor_despierto = True
-            break
-          else:
-            print(f"Intento {intento}/{intentos_maximos}: Estado {response.status_code}, reintentando...")
-        except Exception as ping_err:
-          print(f"Intento {intento}/{intentos_maximos}: Servidor iniciando/dormido ({ping_err})")
-        
-        # IMPORTANTE: Forzamos la pausa en CADA intento fallido, sin importar el tipo de error
-        time.sleep(2)
-
-      if not servidor_despierto:
-        print("Aviso: Se agotaron los intentos de sondeo, intentaremos el POST de todas formas...")
-
-      print(f"Enviando texto a eSpeak URL: {ESPEAK_SERVICE_URL} con texto: {texto_limpio_espeak}")
-      
-      # Damos un timeout de 45s al POST por si el servicio terminó de levantar en el último segundo
+      # Timeout de 90 segundos: Espera pacientemente el arte ASCII de Render y el arranque completo
       espeak_response = requests.post(
           ESPEAK_SERVICE_URL,
           data=texto_limpio_espeak.encode("utf-8"),
           headers={"Content-Type": "text/plain"},
-          timeout=45,
+          timeout=90,
       )
       print(f"Respuesta de eSpeak - Status Code: {espeak_response.status_code}")
 
