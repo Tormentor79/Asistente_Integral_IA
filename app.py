@@ -130,26 +130,38 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 5. TTS: Despertar pacientemente con GET (retiene la conexión como el navegador) y luego POST
+    # 5. TTS: Despertar pacientemente con GET (sondeo hasta recibir 200 OK) y luego POST
     base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]  # Obtiene la URL base
     print(f"Despertando eSpeak mediante GET en: {base_espeak_url}")
 
-    try:
-      # Una única petición GET con un timeout largo de 45 segundos.
-      # Render retiene esta conexión mientras enciende el contenedor en frío.
-      res_get = requests.get(base_espeak_url, timeout=45)
-      print(f"Servidor despertó. Status Code del GET: {res_get.status_code}")
-    except Exception as wakeup_err:
-      print(f"Aviso en el despertar GET (continuando de todas formas): {wakeup_err}")
+    servidor_listo = False
+    intentos_maximos = 15  # Reintentar durante ~45 segundos
 
-    # Breve pausa de seguridad para asegurar que Flask esté listo para recibir el POST
-    time.sleep(2)
+    for intento in range(1, intentos_maximos + 1):
+      try:
+        res_get = requests.get(base_espeak_url, timeout=10)
+        # Solo consideramos que despertó cuando devuelve 200 OK (y no el 502 de Render)
+        if res_get.status_code == 200:
+          print(f"¡Servidor eSpeak activo y listo en el intento {intento}!")
+          servidor_listo = True
+          break
+        else:
+          print(f"Intento {intento}/{intentos_maximos}: eSpeak respondió {res_get.status_code}. Esperando 3s...")
+      except Exception as wakeup_err:
+        print(f"Intento {intento}/{intentos_maximos}: Servidor despertando ({wakeup_err}). Esperando 3s...")
+      
+      time.sleep(3)
+
+    if not servidor_listo:
+      print("Aviso: Se agotaron los intentos de espera, realizando POST de todas formas...")
+
+    # Pausa breve de seguridad antes de enviar el POST
+    time.sleep(1)
 
     print(f"Enviando texto a eSpeak por POST URL: {ESPEAK_SERVICE_URL}")
     print(f"Texto a sintetizar: {texto_limpio_espeak}")
 
     try:
-      # Ahora el POST se ejecuta con el servidor ya activo
       espeak_response = requests.post(
           ESPEAK_SERVICE_URL,
           data=texto_limpio_espeak.encode("utf-8"),
@@ -217,3 +229,4 @@ def descargar_ai_limpio():
 
 if __name__ == "__main__":
   app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    
