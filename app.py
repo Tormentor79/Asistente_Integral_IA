@@ -140,7 +140,7 @@ def procesar_voz():
       # Bucle de sondeo para despertar el servidor si está dormido
       for intento in range(1, intentos_maximos + 1):
         try:
-          response = requests.get(base_espeak_url, timeout=3)
+          response = requests.get(base_espeak_url, timeout=5)
           if response.status_code < 500:
             print(f"¡Servidor eSpeak despierto y listo (intento {intento})!")
             servidor_despierto = True
