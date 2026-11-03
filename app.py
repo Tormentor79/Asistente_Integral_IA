@@ -129,20 +129,31 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 5. TTS: Enviar el texto a eSpeak esperando pacientemente (como hace el navegador)
-    print(f"Enviando texto a eSpeak URL (esperando arranque en frío si está dormido): {ESPEAK_SERVICE_URL}")
+    # 5. TTS: Enviar el texto a eSpeak con paciencia de hasta 60 segundos
+    print(f"Enviando texto a eSpeak URL: {ESPEAK_SERVICE_URL}")
     print(f"Texto a sintetizar: {texto_limpio_espeak}")
 
     try:
-      # Timeout de 90 segundos: Espera pacientemente el arte ASCII de Render y el arranque completo
+      # Timeout de 60 segundos: Da margen si el servidor de eSpeak está levantando
+      # pero responde de inmediato si ya está activo.
       espeak_response = requests.post(
           ESPEAK_SERVICE_URL,
           data=texto_limpio_espeak.encode("utf-8"),
           headers={"Content-Type": "text/plain"},
-          timeout=90,
+          timeout=60,
       )
       print(f"Respuesta de eSpeak - Status Code: {espeak_response.status_code}")
 
+    except requests.exceptions.Timeout:
+      print("Error: El servicio eSpeak tardó más de 60 segundos en responder.")
+      return (
+          jsonify({
+              "error": "El servicio de eSpeak excedió el tiempo límite de espera (timeout).",
+              "stt": stt_text,
+              "ai": ai_sin_emojis,
+          }),
+          500,
+      )
     except Exception as e:
       print(f"Error de conexión con eSpeak: {str(e)}")
       return (
