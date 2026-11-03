@@ -130,25 +130,37 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 5. TTS: El método original exacto que mantenía la conexión en frío abierta
+    # 5. TTS: Despertar asegurando un 200 OK real mediante bucle de sondeo antes del POST
     base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]  # Obtiene la URL base
-    print(f"Despertando eSpeak mediante GET en: {base_espeak_url}")
+    print(f"Despertando eSpeak en: {base_espeak_url}")
 
-    try:
-      # Petición GET única con timeout largo de 60 segundos (retiene la conexión como el navegador)
-      res_get = requests.get(base_espeak_url, timeout=60)
-      print(f"Servidor despertó. Status Code del GET: {res_get.status_code}")
-    except Exception as wakeup_err:
-      print(f"Aviso en el despertar GET (continuando de todas formas): {wakeup_err}")
+    servidor_listo = False
+    intentos_maximos = 20  # Hasta 20 intentos (~60 segundos de paciencia total)
 
-    # Breve pausa de seguridad para asegurar que Flask esté listo para recibir el POST
-    time.sleep(2)
+    for intento in range(1, intentos_maximos + 1):
+      try:
+        res_get = requests.get(base_espeak_url, timeout=5)
+        if res_get.status_code == 200:
+          print(f"¡Servidor eSpeak activo y listo en el intento {intento}!")
+          servidor_listo = True
+          break
+        else:
+          print(f"Intento {intento}/{intentos_maximos}: eSpeak dio status {res_get.status_code} (durmiendo). Reintentando en 3s...")
+      except Exception as e:
+        print(f"Intento {intento}/{intentos_maximos}: Conectando ({e}). Reintentando en 3s...")
+      
+      time.sleep(3)
+
+    if not servidor_listo:
+      print("Aviso: Se agotó el tiempo de espera del despertar, intentando POST de todos modos...")
+
+    # Breve pausa de seguridad antes del POST
+    time.sleep(1)
 
     print(f"Enviando texto a eSpeak por POST URL: {ESPEAK_SERVICE_URL}")
     print(f"Texto a sintetizar: {texto_limpio_espeak}")
 
     try:
-      # Ahora el POST se ejecuta con el servidor ya activo
       espeak_response = requests.post(
           ESPEAK_SERVICE_URL,
           data=texto_limpio_espeak.encode("utf-8"),
