@@ -11,38 +11,11 @@ ESPEAK_SERVICE_URL = os.environ.get(
     "ESPEAK_SERVICE_URL", "https://tu-espeak-server.onrender.com/tts"
 )
 
-# Archivos temporales locales en el servidor
-#STT_FILE = "stt.txt"
-#AI_FILE = "ai.txt"  # Con formato markdown y saltos de línea (sin emojis)
-#AI_LIMPIO_FILE = "ai_limpio.txt"  # Texto plano absoluto para eSpeak
-#---------------------------------------------------------------------
-
 # Rutas absolutas seguras en la carpeta actual del script
 STT_FILE = os.path.join(os.getcwd(), "stt.txt")
-AI_FILE = os.path.join(os.getcwd(), "ai.txt")
-AI_LIMPIO_FILE = os.path.join(os.getcwd(), "ai_limpio.txt")
+AI_FILE = os.path.join(os.getcwd(), "ai.txt")  # Con formato markdown y saltos de línea (sin emojis)
+AI_LIMPIO_FILE = os.path.join(os.getcwd(), "ai_limpio.txt")  # Texto plano absoluto para eSpeak
 
-
-@app.route("/logs/stt", methods=["GET"])
-def get_stt_log():
-  if os.path.exists(STT_FILE):
-    return send_file(STT_FILE, mimetype="text/plain")
-  return "Archivo stt.txt no encontrado aún", 404
-
-
-@app.route("/logs/ai", methods=["GET"])
-def get_ai_log():
-  if os.path.exists(AI_FILE):
-    return send_file(AI_FILE, mimetype="text/plain")
-  return "Archivo ai.txt no encontrado aún", 404
-
-
-@app.route("/logs/ai-limpio", methods=["GET"])
-def get_ai_limpio_log():
-  if os.path.exists(AI_LIMPIO_FILE):
-    return send_file(AI_LIMPIO_FILE, mimetype="text/plain")
-  return "Archivo ai_limpio.txt no encontrado aún", 404
-#-----------------------------------------------------------
 
 def limpiar_emojis(texto):
   # Patrón para eliminar emojis y símbolos gráficos Unicode
@@ -55,7 +28,7 @@ def limpiar_emojis(texto):
 
 @app.route("/", methods=["GET"])
 def home():
-  return "¡Servidor Integral de Voz funcionando correctamente!", 200
+  return "¡Servidor Integral de IA funcionando correctamente!", 200
 
 
 @app.route("/procesar-voz", methods=["POST"])
@@ -73,11 +46,39 @@ def procesar_voz():
     if "audio" not in request.files:
       return jsonify({"error": "No se encontró el archivo de audio"}), 400
 
+    # 1. Capturar el parámetro 'modo' enviado por el cliente (por defecto 'normal')
+    modo = request.form.get("modo", "normal")
+    print(f"Modo de respuesta solicitado: {modo}")
+
+    # 2. Configurar dinámicamente el prompt y los tokens según el modo
+    if modo == "corto":
+      system_content = (
+          "Eres un asistente de voz inteligente. Sé muy conciso y directo, "
+          "respondiendo en máximo 1 o 2 oraciones. NO utilices emojis bajo ningún concepto."
+      )
+      max_tokens_val = 100
+    elif modo == "largo":
+      system_content = (
+          "Eres un asistente de voz inteligente. Puedes explayarte de forma muy "
+          "detallada y descriptiva (unas 6 u 8 oraciones). NO utilices emojis bajo ningún concepto. "
+          "Puedes usar formato markdown y saltos de línea."
+      )
+      max_tokens_val = 450
+    else:  # Modo normal por defecto
+      system_content = (
+          "Eres un asistente de voz inteligente. Puedes explayarte "
+          "de forma natural y detallada (aproximadamente unas 4 o "
+          "5 oraciones). NO utilices emojis bajo ningún concepto. "
+          "Puedes usar formato markdown y saltos de línea si lo "
+          "consideras útil para estructurar tu respuesta."
+      )
+      max_tokens_val = 300
+
     audio_file = request.files["audio"]
     temp_audio_path = "temp_input.wav"
     audio_file.save(temp_audio_path)
 
-    # 1. STT: Whisper
+    # 3. STT: Whisper
     print("Transcribiendo audio con Whisper...")
     with open(temp_audio_path, "rb") as file:
       transcription = client.audio.transcriptions.create(
@@ -94,24 +95,15 @@ def procesar_voz():
     with open(STT_FILE, "w", encoding="utf-8") as f:
       f.write(stt_text)
 
-    # 2. LLM: Qwen (permitiendo explayarse pero sin emojis)
+    # 4. LLM: Qwen (con prompt y tokens dinámicos según el modo)
     print("Procesando respuesta con la IA...")
     chat_completion = client.chat.completions.create(
         messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Eres un asistente de voz inteligente. Puedes explayarte"
-                    " de forma natural y detallada (aproximadamente unas 4 o"
-                    " 5 oraciones). NO utilices emojis bajo ningún concepto."
-                    " Puedes usar formato markdown y saltos de línea si lo"
-                    " consideras útil para estructurar tu respuesta."
-                ),
-            },
+            {"role": "system", "content": system_content},
             {"role": "user", "content": stt_text},
         ],
         model="qwen/qwen3.8-27b",
-        max_tokens=300,
+        max_tokens=max_tokens_val,
     )
     ai_response_raw = chat_completion.choices[0].message.content
     print(f"Respuesta cruda de la IA: {ai_response_raw}")
@@ -137,7 +129,7 @@ def procesar_voz():
     if os.path.exists(temp_audio_path):
       os.remove(temp_audio_path)
 
-    # 3. TTS: Enviar el texto súper limpio a eSpeak por POST con manejo detallado de errores
+    # 5. TTS: Enviar el texto limpio a eSpeak por POST
     print(
         f"Enviando texto a eSpeak URL: {ESPEAK_SERVICE_URL} con texto:"
         f" {texto_limpio_espeak}"
