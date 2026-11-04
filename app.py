@@ -154,24 +154,31 @@ def procesar_voz():
         if os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
 
+
         # =========================================================
         # 5. TTS: Bucle de espera inteligente para despertar eSpeak
         # =========================================================
         print("Verificando si el servicio eSpeak está despierto...")
-        intentos_restantes = 15  # 15 intentos * 5 segundos = 1 minuto 15 segundos máximo de espera
+        intentos_restantes = 15  
+        servidor_despierto = False
 
-        # Mientras NO esté operativo Y todavía queden intentos...
-        while not verificar_estado_espeak() and intentos_restantes > 0:
-            print(f"eSpeak está durmiendo. Reintentando en 10s... (Intentos restantes: {intentos_restantes})")
+        while intentos_restantes > 0:
+            if verificar_estado_espeak():
+                servidor_despierto = True
+                break  # ¡Ya despertó! Rompemos el bucle al instante
+                
+            print(f"eSpeak está durmiendo. Reintentando en 5s... (Intentos restantes: {intentos_restantes})")
             time.sleep(5)
-            intentos_restantes -= 1  # Restamos un intento correctamente
+            intentos_restantes -= 1
 
-        # Verificación final tras el bucle
-        if not verificar_estado_espeak():
+        # Verificación final
+        if not servidor_despierto:
             print("Error: El servidor de eSpeak NO responde tras agotar los intentos.")
             return jsonify({"error": "SERVER de eSpeak NO responde"}), 500
 
         print("¡El servidor eSpeak está 100% operativo!")
+        
+        
 
         # Breve pausa de seguridad para asegurar estabilidad
         time.sleep(2)
