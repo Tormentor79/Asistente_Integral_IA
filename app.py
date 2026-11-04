@@ -58,36 +58,36 @@ def verificar_estado_espeak():
 
 
 # ---------------------------------------------------------
-# FUNCION PARA GENERAR AUDIO CON CANOPY (Principal - Groq)
+# FUNCION PARA GENERAR AUDIO CON CANOPY (Principal - HTTP Directo)
 # ---------------------------------------------------------
 def generar_tts_canopy(texto, api_key):
     try:
         print("Generando audio con Canopy (Orpheus TTS)...")
-        client = Groq(api_key=api_key)
         
-        speech_file_path = "temp_canopy.wav"
+        url = "https://api.groq.com/openai/v1/audio/speech"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "canopylabs/orpheus-v1-english",
+            "voice": "troy",
+            "input": texto,
+            "response_format": "wav"
+        }
         
-        # Llamada exacta según la documentación oficial de Orpheus/Groq
-        response = client.audio.speech.create(
-            model="canopylabs/orpheus-v1-english",
-            voice="troy",
-            input=texto,
-            response_format="wav"
-        )
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
         
-        # Usamos el método nativo documentado para guardar el archivo
-        response.write_to_file(speech_file_path)
-        
-        with open(speech_file_path, "rb") as f:
-            audio_bytes = f.read()
-            
-        if os.path.exists(speech_file_path):
-            os.remove(speech_file_path)
-            
-        return audio_bytes
+        if response.status_code == 200:
+            print("¡Audio generado exitosamente con Canopy vía API HTTP!")
+            return response.content
+        else:
+            print(f"⚠️ Error en Canopy (Status {response.status_code}): {response.text}")
+            return None
+
     except Exception as e:
         print(f"⚠️ Error al generar audio con Canopy: {str(e)}")
-        return None        
+        return None
 
 
 @app.route("/", methods=["GET"])
