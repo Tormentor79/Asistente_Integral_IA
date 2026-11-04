@@ -158,12 +158,12 @@ def procesar_voz():
         # 5. TTS: Bucle de espera inteligente para despertar eSpeak
         # =========================================================
         print("Verificando si el servicio eSpeak está despierto...")
-        intentos_restantes = 30  # 30 intentos * 10 segundos = 5 minutos máximo de espera
+        intentos_restantes = 15  # 15 intentos * 5 segundos = 1 minuto 15 segundos máximo de espera
 
         # Mientras NO esté operativo Y todavía queden intentos...
         while not verificar_estado_espeak() and intentos_restantes > 0:
             print(f"eSpeak está durmiendo. Reintentando en 10s... (Intentos restantes: {intentos_restantes})")
-            time.sleep(10)
+            time.sleep(5)
             intentos_restantes -= 1  # Restamos un intento correctamente
 
         # Verificación final tras el bucle
