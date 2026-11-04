@@ -60,6 +60,13 @@ def verificar_estado_espeak():
 # ---------------------------------------------------------
 # FUNCION PARA GENERAR AUDIO CON CANOPY (Principal - HTTP Directo)
 # ---------------------------------------------------------
+# Para utilizar modelo en ingles:
+# "model": "canopylabs/orpheus-v1-english",
+# "voice": "troy",
+# Para español (en realidad es porque suena mejor)
+# model="canopylabs/orpheus-arabic-saudi",
+# voice="abdullah",
+# ---------------------------------------------------------
 def generar_tts_canopy(texto, api_key):
     try:
         print("Generando audio con Canopy (Orpheus TTS)...")
@@ -70,8 +77,8 @@ def generar_tts_canopy(texto, api_key):
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "canopylabs/orpheus-v1-english",
-            "voice": "troy",
+            "model": "canopylabs/orpheus-arabic-saudi",
+            "voice": "abdullah",
             "input": texto,
             "response_format": "wav"
         }
