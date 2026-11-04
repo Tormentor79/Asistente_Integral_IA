@@ -31,23 +31,33 @@ def limpiar_emojis(texto):
 # FUNCION DE VERIFICACION (Ahora está afuera, limpia y reutilizable)
 # ---------------------------------------------------------
 def verificar_estado_espeak():
-    # Obtenemos la URL base (ej: https://tu-espeak-server.onrender.com)
     base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]
     
+    # Cabeceras trampa para simular un navegador real (Chrome en Windows)
+    headers_navegador = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "es-ES,es;q=0.9",
+        "Connection": "keep-alive"
+    }
+    
     try:
-        # Hacemos un GET rápido con un timeout corto
-        response = requests.get(base_espeak_url, timeout=5)
+        # Usamos una sesión para mantener cookies y sockets vivos como el navegador
+        session = requests.Session()
         
-        # 1. Evaluamos que sea 200 OK
-        # 2. Evaluamos que la respuesta sea texto plano y NO una página HTML de Render (<html...)
+        # Timeout generoso de 15s para darle tiempo al socket de negociar el despertar
+        response = session.get(base_espeak_url, headers=headers_navegador, timeout=15)
+        
+        # Si responde 200 y NO es la página de carga de Render
         if response.status_code == 200 and "<html" not in response.text.lower():
-            print(f"Servidor eSpeak operativo. Status Code: {response.status_code}")
+            print(f"¡eSpeak despertó imitando al navegador! Status Code: {response.status_code}")
             return True
             
+        print(f"eSpeak sigue durmiendo (Render devolvió estado {response.status_code})...")
         return False
             
-    except requests.exceptions.RequestException:
-        # Si hay timeout, error de red o el servidor está dormido
+    except requests.exceptions.RequestException as e:
+        print(f"Esperando respuesta de Render... ({e})")
         return False
 
 
