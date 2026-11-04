@@ -7,7 +7,7 @@ from groq import Groq
 
 app = Flask(__name__)
 
-# URL de tu servicio eSpeak en Render
+# URL de tu servicio eSpeak en Render (Respaldo)
 ESPEAK_SERVICE_URL = os.environ.get(
     "ESPEAK_SERVICE_URL", "https://tu-espeak-server.onrender.com/tts"
 )
@@ -28,7 +28,7 @@ def limpiar_emojis(texto):
 
 
 # ---------------------------------------------------------
-# FUNCION DE VERIFICACION (Ahora está afuera, limpia y reutilizable)
+# FUNCION DE VERIFICACION PARA ESPEAK (Respaldo)
 # ---------------------------------------------------------
 def verificar_estado_espeak():
     base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]
@@ -40,28 +40,52 @@ def verificar_estado_espeak():
     
     try:
         session = requests.Session()
-        # Timeout un poco más alto para darle tiempo al socket de conectar con Render
         response = session.get(base_espeak_url, headers=headers_navegador, timeout=10)
         
-        # SI RESPONDE 200 OK Y NO ES EL HTML DE ERROR DE RENDER:
         if response.status_code == 200 and "<html" not in response.text.lower():
             print(f"¡eSpeak está 100% despierto! Status: 200")
             return True
             
-        # SI RESPONDE 502 o 503:
-        # Significa que Render RECIBIÓ la petición y está encendiendo el contenedor en este momento.
         if response.status_code in [502, 503]:
-            print(f"Render avisa que eSpeak está despertando (Status {response.status_code}). Esperando a que el contenedor encienda...")
-            return False  # Retornamos False para que el bucle espere a que termine de arrancar, ¡pero ya lo despertamos!
+            print(f"Render avisa que eSpeak está despertando (Status {response.status_code}). Esperando...")
+            return False
             
         return False
             
     except requests.exceptions.RequestException:
-        # Si hay timeout de red mientras Render levanta el servicio
-        print("Conectando con Render para despertar el servicio...")
+        print("Conectando con Render para despertar el servicio eSpeak...")
         return False
+
+
+# ---------------------------------------------------------
+# FUNCION PARA GENERAR AUDIO CON CANOPY (Principal)
+# ---------------------------------------------------------
+def generar_tts_canopy(texto, api_key):
+    try:
+        print("Generando audio con Canopy (Orpheus TTS)...")
+        client = Groq(api_key=api_key)
         
+        speech_file_path = "temp_canopy.wav"
+        response = client.audio.speech.create(
+            model="canopylabs/orpheus-v1-english",
+            voice="troy",
+            input=texto,
+            response_format="wav"
+        )
         
+        # Guardamos usando el método nativo del SDK y leemos los bytes
+        response.write_to_file(speech_file_path)
+        
+        with open(speech_file_path, "rb") as f:
+            audio_bytes = f.read()
+            
+        if os.path.exists(speech_file_path):
+            os.remove(speech_file_path)
+            
+        return audio_bytes
+    except Exception as e:
+        print(f"⚠️ Error al generar audio con Canopy: {str(e)}")
+        return None
 
 
 @app.route("/", methods=["GET"])
@@ -84,9 +108,10 @@ def procesar_voz():
         if "audio" not in request.files:
             return jsonify({"error": "No se encontró el archivo de audio"}), 400
 
-        # 1. Capturar el parámetro 'modo' enviado por el cliente (por defecto 'normal')
+        # 1. Capturar parámetros: 'modo' y el nuevo 'engineTTS' (por defecto 'canopy')
         modo = request.form.get("modo", "normal")
-        print(f"Modo de respuesta solicitado: {modo}")
+        engine_tts = request.form.get("engineTTS", "canopy")
+        print(f"Modo de respuesta solicitado: {modo} | Motor TTS solicitado: {engine_tts}")
 
         # 2. Configurar dinámicamente el prompt y los tokens según el modo
         if modo == "corto":
@@ -167,75 +192,80 @@ def procesar_voz():
         if os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
 
-
         # =========================================================
-        # 5. TTS: Bucle de espera inteligente para despertar eSpeak
+        # 5. TTS: Lógica de selección, respaldo y generación de audio
         # =========================================================
-        print("Verificando si el servicio eSpeak está despierto...")
-        intentos_restantes = 15  
-        servidor_despierto = False
+        audio_bytes = None
+        motor_utilizado = None
 
-        while intentos_restantes > 0:
-            if verificar_estado_espeak():
-                servidor_despierto = True
-                break  # ¡Ya despertó! Rompemos el bucle al instante
-                
-            print(f"eSpeak está durmiendo. Reintentando en 5s... (Intentos restantes: {intentos_restantes})")
-            time.sleep(5)
-            intentos_restantes -= 1
+        # Si el motor solicitado es Canopy (por defecto), intentamos usarlo primero
+        if engine_tts == "canopy":
+            audio_bytes = generar_tts_canopy(ai_sin_emojis, groq_api_key)
+            if audio_bytes:
+                motor_utilizado = "Canopy"
+            else:
+                print("⚠️ Canopy falló. Cambiando automáticamente a eSpeak (Respaldo)...")
+                engine_tts = "espeak"  # Forzamos el cambio al respaldo
 
-        # Verificación final
-        if not servidor_despierto:
-            print("Error: El servidor de eSpeak NO responde tras agotar los intentos.")
-            return jsonify({"error": "SERVER de eSpeak NO responde"}), 500
+        # Si se pidió eSpeak directamente o Canopy falló y tocó respaldo
+        if engine_tts == "espeak":
+            print("Usando motor eSpeak (Respaldo)...")
+            
+            print("Verificando si el servicio eSpeak está despierto...")
+            intentos_restantes = 15  
+            servidor_despierto = False
 
-        print("¡El servidor eSpeak está 100% operativo!")
-        
-        
+            while intentos_restantes > 0:
+                if verificar_estado_espeak():
+                    servidor_despierto = True
+                    break  
+                    
+                print(f"eSpeak está durmiendo. Reintentando en 5s... (Intentos restantes: {intentos_restantes})")
+                time.sleep(5)
+                intentos_restantes -= 1
 
-        # Breve pausa de seguridad para asegurar estabilidad
-        time.sleep(2)
+            if not servidor_despierto:
+                print("Error: El servidor de eSpeak NO responde tras agotar los intentos.")
+                return jsonify({"error": "SERVER de eSpeak NO responde"}), 500
 
-        print(f"Enviando texto a eSpeak por POST URL: {ESPEAK_SERVICE_URL}")
-        print(f"Texto a sintetizar: {texto_limpio_espeak}")
+            print("¡El servidor eSpeak está 100% operativo!")
+            time.sleep(2)
 
-        try:
-            # Ahora el POST se ejecuta con el servidor ya activo
-            espeak_response = requests.post(
-                ESPEAK_SERVICE_URL,
-                data=texto_limpio_espeak.encode("utf-8"),
-                headers={"Content-Type": "text/plain"},
-                timeout=30,
-            )
-            print(f"Respuesta de eSpeak - Status Code: {espeak_response.status_code}")
+            print(f"Enviando texto a eSpeak por POST URL: {ESPEAK_SERVICE_URL}")
+            try:
+                espeak_response = requests.post(
+                    ESPEAK_SERVICE_URL,
+                    data=texto_limpio_espeak.encode("utf-8"),
+                    headers={"Content-Type": "text/plain"},
+                    timeout=30,
+                )
+                print(f"Respuesta de eSpeak - Status Code: {espeak_response.status_code}")
 
-        except Exception as e:
-            print(f"Error de conexión con eSpeak en el POST: {str(e)}")
-            return (
-                jsonify({
+                if espeak_response.status_code != 200:
+                    print(f"eSpeak devolvió error body: {espeak_response.text}")
+                    return jsonify({
+                        "error": f"Fallo al generar el audio en el servicio eSpeak (Status {espeak_response.status_code})",
+                        "detalle_espeak": espeak_response.text,
+                        "stt": stt_text,
+                        "ai": ai_sin_emojis,
+                    }), 500
+
+                audio_bytes = espeak_response.content
+                motor_utilizado = "eSpeak"
+
+            except Exception as e:
+                print(f"Error de conexión con eSpeak en el POST: {str(e)}")
+                return jsonify({
                     "error": f"No se pudo conectar con el servicio eSpeak: {str(e)}",
                     "stt": stt_text,
                     "ai": ai_sin_emojis,
-                }),
-                500,
-            )
+                }), 500
 
-        if espeak_response.status_code != 200:
-            print(f"eSpeak devolvió error body: {espeak_response.text}")
-            return (
-                jsonify({
-                    "error": (
-                        f"Fallo al generar el audio en el servicio eSpeak (Status"
-                        f" {espeak_response.status_code})"
-                    ),
-                    "detalle_espeak": espeak_response.text,
-                    "stt": stt_text,
-                    "ai": ai_sin_emojis,
-                }),
-                500,
-            )
+        if not audio_bytes:
+            return jsonify({"error": "Ambos motores TTS fallaron o no respondieron"}), 500
 
-        return espeak_response.content, 200, {"Content-Type": "audio/mpeg"}
+        print(f"¡Audio generado exitosamente usando el motor: {motor_utilizado}!")
+        return audio_bytes, 200, {"Content-Type": "audio/mpeg"}
 
     except Exception as e:
         print(f"Error crítico en el servidor: {str(e)}")
@@ -255,7 +285,7 @@ def descargar_stt():
 @app.route("/logs/ai", methods=["GET"])
 def descargar_ai():
     if os.path.exists(AI_FILE):
-        return send_file(AI_FILE, mimetype="text/plain", as_attachment=True)
+        return send_file(AI_FILE, mimetype="text/plain", as_authorization=True) # or as_attachment=True
     return "Archivo AI con formato no encontrado", 404
 
 
