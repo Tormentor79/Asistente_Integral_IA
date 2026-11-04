@@ -67,7 +67,7 @@ def generar_tts_canopy(texto, api_key):
         
         speech_file_path = "temp_canopy.wav"
         
-        # Corrección en la llamada de audio acorde a la SDK de Groq / OpenAI compatible
+        # Llamada exacta según la documentación oficial de Orpheus/Groq
         response = client.audio.speech.create(
             model="canopylabs/orpheus-v1-english",
             voice="troy",
@@ -75,17 +75,8 @@ def generar_tts_canopy(texto, api_key):
             response_format="wav"
         )
         
-        # Verificamos si la respuesta tiene el método de guardado o contenido directo
-        if hasattr(response, "write_to_file"):
-            response.write_to_file(speech_file_path)
-        elif hasattr(response, "content"):
-            with open(speech_file_path, "wb") as f:
-                f.write(response.content)
-        else:
-            # Asumiendo iterador de chunks si fuera necesario
-            with open(speech_file_path, "wb") as f:
-                for chunk in response.iter_bytes():
-                    f.write(chunk)
+        # Usamos el método nativo documentado para guardar el archivo
+        response.write_to_file(speech_file_path)
         
         with open(speech_file_path, "rb") as f:
             audio_bytes = f.read()
@@ -96,7 +87,7 @@ def generar_tts_canopy(texto, api_key):
         return audio_bytes
     except Exception as e:
         print(f"⚠️ Error al generar audio con Canopy: {str(e)}")
-        return None
+        return None        
 
 
 @app.route("/", methods=["GET"])
