@@ -33,32 +33,35 @@ def limpiar_emojis(texto):
 def verificar_estado_espeak():
     base_espeak_url = ESPEAK_SERVICE_URL.rsplit("/", 1)[0]
     
-    # Cabeceras trampa para simular un navegador real (Chrome en Windows)
     headers_navegador = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "es-ES,es;q=0.9",
         "Connection": "keep-alive"
     }
     
     try:
-        # Usamos una sesión para mantener cookies y sockets vivos como el navegador
         session = requests.Session()
+        # Timeout un poco más alto para darle tiempo al socket de conectar con Render
+        response = session.get(base_espeak_url, headers=headers_navegador, timeout=10)
         
-        # Timeout generoso de 15s para darle tiempo al socket de negociar el despertar
-        response = session.get(base_espeak_url, headers=headers_navegador, timeout=15)
-        
-        # Si responde 200 y NO es la página de carga de Render
+        # SI RESPONDE 200 OK Y NO ES EL HTML DE ERROR DE RENDER:
         if response.status_code == 200 and "<html" not in response.text.lower():
-            print(f"¡eSpeak despertó imitando al navegador! Status Code: {response.status_code}")
+            print(f"¡eSpeak está 100% despierto! Status: 200")
             return True
             
-        print(f"eSpeak sigue durmiendo (Render devolvió estado {response.status_code})...")
+        # SI RESPONDE 502 o 503:
+        # Significa que Render RECIBIÓ la petición y está encendiendo el contenedor en este momento.
+        if response.status_code in [502, 503]:
+            print(f"Render avisa que eSpeak está despertando (Status {response.status_code}). Esperando a que el contenedor encienda...")
+            return False  # Retornamos False para que el bucle espere a que termine de arrancar, ¡pero ya lo despertamos!
+            
         return False
             
-    except requests.exceptions.RequestException as e:
-        print(f"Esperando respuesta de Render... ({e})")
+    except requests.exceptions.RequestException:
+        # Si hay timeout de red mientras Render levanta el servicio
+        print("Conectando con Render para despertar el servicio...")
         return False
+        
+        
 
 
 @app.route("/", methods=["GET"])
