@@ -60,7 +60,7 @@ def verificar_estado_espeak():
 # ---------------------------------------------------------
 # FUNCION PARA GENERAR AUDIO CON CANOPY (Principal - HTTP Directo)
 # ---------------------------------------------------------
-def generar_tts_canopy(texto, api_key, modelo="canopylabs/orpheus-arabic-saudi", voz="Abdullah"):
+def generar_tts_canopy(texto, api_key, modelo="canopylabs/orpheus-arabic-saudi", voz="abdullah"):
     try:
         print(f"Generando audio con Canopy (Modelo: {modelo}, Voz: {voz})...")
         
