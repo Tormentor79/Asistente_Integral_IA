@@ -60,16 +60,9 @@ def verificar_estado_espeak():
 # ---------------------------------------------------------
 # FUNCION PARA GENERAR AUDIO CON CANOPY (Principal - HTTP Directo)
 # ---------------------------------------------------------
-# Para utilizar modelo en ingles:
-# "model": "canopylabs/orpheus-v1-english",
-# "voice": "troy",
-# Para español (en realidad es porque suena mejor)
-# model="canopylabs/orpheus-arabic-saudi",
-# voice="abdullah",
-# ---------------------------------------------------------
-def generar_tts_canopy(texto, api_key):
+def generar_tts_canopy(texto, api_key, modelo="canopylabs/orpheus-arabic-saudi", voz="Abdullah"):
     try:
-        print("Generando audio con Canopy (Orpheus TTS)...")
+        print(f"Generando audio con Canopy (Modelo: {modelo}, Voz: {voz})...")
         
         url = "https://api.groq.com/openai/v1/audio/speech"
         headers = {
@@ -77,8 +70,8 @@ def generar_tts_canopy(texto, api_key):
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "canopylabs/orpheus-arabic-saudi",
-            "voice": "abdullah",
+            "model": modelo,
+            "voice": voz,
             "input": texto,
             "response_format": "wav"
         }
@@ -117,10 +110,21 @@ def procesar_voz():
         if "audio" not in request.files:
             return jsonify({"error": "No se encontró el archivo de audio"}), 400
 
-        # 1. Capturar parámetros: 'modo' y el nuevo 'engineTTS' (por defecto 'canopy')
+        # 1. Capturar parámetros: 'modo', 'engineTTS' y opciones específicas de Canopy
         modo = request.form.get("modo", "normal")
         engine_tts = request.form.get("engineTTS", "canopy")
-        print(f"Modo de respuesta solicitado: {modo} | Motor TTS solicitado: {engine_tts}")
+        
+        # Selección de motor / idioma de Canopy (por defecto Arabia Saudita)
+        opcion_idioma_canopy = request.form.get("idiomaCanopy", "arabia-saudi")
+        if opcion_idioma_canopy == "ingles":
+            modelo_canopy = "canopylabs/orpheus-v1-english"
+        else:
+            modelo_canopy = "canopylabs/orpheus-arabic-saudi"
+
+        # Selección de Voz dentro de Arabia Saudita (por defecto "Abdullah" si no se envía otra)
+        voz_canopy = request.form.get("vozCanopy", "Abdullah")
+        
+        print(f"Modo: {modo} | Motor TTS: {engine_tts} | Modelo Canopy: {modelo_canopy} | Voz: {voz_canopy}")
 
         # 2. Configurar dinámicamente el prompt y los tokens según el modo
         if modo == "corto":
@@ -209,9 +213,9 @@ def procesar_voz():
 
         # Si el motor solicitado es Canopy (por defecto), intentamos usarlo primero
         if engine_tts == "canopy":
-            audio_bytes = generar_tts_canopy(ai_sin_emojis, groq_api_key)
+            audio_bytes = generar_tts_canopy(ai_sin_emojis, groq_api_key, modelo=modelo_canopy, voz=voz_canopy)
             if audio_bytes:
-                motor_utilizado = "Canopy"
+                motor_utilizado = f"Canopy ({modelo_canopy} - {voz_canopy})"
             else:
                 print("⚠️ Canopy falló. Cambiando automáticamente a eSpeak (Respaldo)...")
                 engine_tts = "espeak"  # Forzamos el cambio al respaldo
@@ -294,7 +298,7 @@ def descargar_stt():
 @app.route("/logs/ai", methods=["GET"])
 def descargar_ai():
     if os.path.exists(AI_FILE):
-        return send_file(AI_FILE, mimetype="text/plain", as_attachment=True)  # Corregido aquí
+        return send_file(AI_FILE, mimetype="text/plain", as_attachment=True)
     return "Archivo AI con formato no encontrado", 404
 
 
