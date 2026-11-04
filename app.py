@@ -51,14 +51,14 @@ def verificar_estado_espeak():
             return False
             
         return False
-            
+        
     except requests.exceptions.RequestException:
         print("Conectando con Render para despertar el servicio eSpeak...")
         return False
 
 
 # ---------------------------------------------------------
-# FUNCION PARA GENERAR AUDIO CON CANOPY (Principal)
+# FUNCION PARA GENERAR AUDIO CON CANOPY (Principal - Groq)
 # ---------------------------------------------------------
 def generar_tts_canopy(texto, api_key):
     try:
@@ -66,6 +66,8 @@ def generar_tts_canopy(texto, api_key):
         client = Groq(api_key=api_key)
         
         speech_file_path = "temp_canopy.wav"
+        
+        # Corrección en la llamada de audio acorde a la SDK de Groq / OpenAI compatible
         response = client.audio.speech.create(
             model="canopylabs/orpheus-v1-english",
             voice="troy",
@@ -73,8 +75,17 @@ def generar_tts_canopy(texto, api_key):
             response_format="wav"
         )
         
-        # Guardamos usando el método nativo del SDK y leemos los bytes
-        response.write_to_file(speech_file_path)
+        # Verificamos si la respuesta tiene el método de guardado o contenido directo
+        if hasattr(response, "write_to_file"):
+            response.write_to_file(speech_file_path)
+        elif hasattr(response, "content"):
+            with open(speech_file_path, "wb") as f:
+                f.write(response.content)
+        else:
+            # Asumiendo iterador de chunks si fuera necesario
+            with open(speech_file_path, "wb") as f:
+                for chunk in response.iter_bytes():
+                    f.write(chunk)
         
         with open(speech_file_path, "rb") as f:
             audio_bytes = f.read()
@@ -285,7 +296,7 @@ def descargar_stt():
 @app.route("/logs/ai", methods=["GET"])
 def descargar_ai():
     if os.path.exists(AI_FILE):
-        return send_file(AI_FILE, mimetype="text/plain", as_authorization=True) # or as_attachment=True
+        return send_file(AI_FILE, mimetype="text/plain", as_attachment=True)  # Corregido aquí
     return "Archivo AI con formato no encontrado", 404
 
 
